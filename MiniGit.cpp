@@ -112,3 +112,107 @@ void MiniGit::log() const {
         curr = c.parent;
     }
 }
+void MiniGit::save() {
+    // Save HEAD
+    std::ofstream headout(".minigit/HEAD");
+    headout << head << "\n";
+    headout.close();
+
+    // Save branches
+    std::ofstream bout(".minigit/branches.txt");
+    for (const auto& [name, hash] : branches)
+        bout << name << " " << hash << "\n";
+    bout.close();
+
+    // Save staged files
+    std::ofstream sout(".minigit/staged.txt");
+    for (const auto& f : stagedFiles)
+        sout << f << "\n";
+    sout.close();
+
+    // Save each commit as a separate file
+    fs::create_directory(".minigit/commits");
+    for (const auto& [hash, c] : commits) {
+        std::ofstream cout(".minigit/commits/" + hash + ".txt");
+        cout << c.hash << "\n";
+        cout << c.message << "\n";
+        cout << c.timestamp << "\n";
+        cout << c.parent << "\n";
+        cout << c.blobs.size() << "\n";
+        for (const auto& b : c.blobs)
+            cout << b.hash << " " << b.filename << "\n";
+        cout.close();
+    }
+}
+
+void MiniGit::merge(const std::string& branchName) {
+    if (!branches.count(branchName)) {
+        std::cout << RED << "Branch not found: " << branchName << RESET << "\n";
+        return;
+    }
+    if (branchName == head) {
+        std::cout << YELLOW << "You cannot merge a branch into itself." << RESET << "\n";
+        return;
+    }
+    std::string currentCommitHash = branches[head];
+    std::string targetCommitHash = branches[branchName];
+
+    if (!commits.count(currentCommitHash) || !commits.count(targetCommitHash)) {
+        std::cout << RED << "Invalid branches." << RESET << "\n";
+        return;
+    }
+
+    std::cout << CYAN << "Merging branch '" << branchName << "' INTO current branch '" << head << "'." << RESET << "\n";
+
+    const Commit& current = commits.at(currentCommitHash);
+    const Commit& target = commits.at(targetCommitHash);
+
+    std::map<std::string, std::string> currentFiles, targetFiles;
+    for (const auto& b : current.blobs) currentFiles[b.filename] = b.hash;
+    for (const auto& b : target.blobs) targetFiles[b.filename] = b.hash;
+
+    std::set<std::string> allFiles;
+    for (const auto& [f, _] : currentFiles) allFiles.insert(f);
+    for (const auto& [f, _] : targetFiles) allFiles.insert(f);
+
+    bool conflict = false;
+    for (const auto& file : allFiles) {
+        std::string curHash = currentFiles.count(file) ? currentFiles[file] : "";
+        std::string tarHash = targetFiles.count(file) ? targetFiles[file] : "";
+
+        if (curHash == tarHash) continue; // No change
+
+        if (!curHash.empty() && !tarHash.empty() && curHash != tarHash) {
+            // Conflict: both branches changed the file
+            std::cout << RED << "CONFLICT: File '" << file << "' was modified in both branches." << RESET << "\n";
+            conflict = true;
+        } else if (curHash.empty() && !tarHash.empty()) {
+            // File only in target: merge it
+            stagedFiles.insert(file);
+            std::ifstream in(".minigit/objects/" + tarHash, std::ios::binary);
+            if (in) {
+                std::ofstream out(file, std::ios::binary);
+                out << in.rdbuf();
+            }
+            std::cout << GREEN << "Merged file '" << file << "' from branch '" << branchName << "' into current branch '" << head << "'." << RESET << "\n";
+        }
+        // If only in current, do nothing
+    }
+
+    if (conflict) {
+        std::cout << YELLOW << "Merge completed with conflicts. Please resolve them and commit manually." << RESET << "\n";
+    } else if (!stagedFiles.empty()) {
+        std::cout << GREEN << "Merge successful. Please commit the result to complete the merge." << RESET << "\n";
+    } else {
+        std::cout << YELLOW << "Nothing to merge. The branches are already up to date." << RESET << "\n";
+    }
+}
+
+void MiniGit::add(const std::string& filename) {
+    if (!fs::exists(filename)) {
+        std::cout << RED << "File not found: " << filename << RESET << "\n";
+        return;
+    }
+    stagedFiles.insert(filename);
+    std::cout << GREEN << "Staged: " << filename << RESET << "\n";
+}
