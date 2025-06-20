@@ -355,30 +355,12 @@ void MiniGit::diff(const std::string& commit1, const std::string& commit2) {
 
 
 void MiniGit::show(const std::string& filename) const {
-    // Find the latest commit for the current branch
-    std::string commitHash = branches.count(head) ? branches.at(head) : "";
-    if (commitHash.empty() || !commits.count(commitHash)) {
-        std::cout << RED << "No commit found for current branch." << RESET << "\n";
-        return;
-    }
-    const Commit& c = commits.at(commitHash);
-    std::string blobHash;
-    for (const auto& b : c.blobs) {
-        if (b.filename == filename) {
-            blobHash = b.hash;
-            break;
-        }
-    }
-    if (blobHash.empty()) {
-        std::cout << RED << "File not found in latest commit: " << filename << RESET << "\n";
-        return;
-    }
-    std::ifstream in(".minigit/objects/" + blobHash, std::ios::binary);
+    std::ifstream in(filename);
     if (!in) {
-        std::cout << RED << "Blob not found for file: " << filename << RESET << "\n";
+        std::cout << RED << "File not found: " << filename << RESET << "\n";
         return;
     }
-    std::cout << YELLOW << "----- " << filename << " (from latest commit) -----" << RESET << "\n";
+    std::cout << YELLOW << "----- " << filename << " -----" << RESET << "\n";
     std::string line;
     while (std::getline(in, line)) {
         std::cout << line << "\n";
