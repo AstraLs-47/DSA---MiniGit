@@ -1,3 +1,111 @@
+#include "MiniGit.hpp"
+#include "sha1.hpp"
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+#include <chrono>
+#include <ctime>
+#include <set>
+#include <map>
+#include <vector>
+#include <algorithm>
+#include <sstream>
+
+namespace fs = std::filesystem;
+
+// Color codes
+#define RESET   "\033[0m"
+#define RED     "\033[31m"
+#define GREEN   "\033[32m"
+#define YELLOW  "\033[33m"
+#define CYAN    "\033[36m"
+#define BOLD    "\033[1m"
+
+MiniGit::MiniGit() { load(); }
+
+void MiniGit::init() {
+    fs::create_directory(".minigit");
+    fs::create_directory(".minigit/objects");
+    fs::create_directory(".minigit/commits");
+    head = "master";
+    branches.clear();
+    branches["master"] = "";
+    stagedFiles.clear();
+    commits.clear();
+    save();
+    std::cout << GREEN << "Initialized empty MiniGit repository." << RESET << "\n";
+}
+
+
+void MiniGit::branch(const std::string& branchName) {
+    branches[branchName] = branches[head]; // New branch points to current commit
+save();
+std::cout << GREEN << "Created branch: " << branchName << RESET << "\n";
+}
+
+
+
+
+void MiniGit::load() {
+    // Load HEAD
+    std::ifstream headin(".minigit/HEAD");
+    if (headin) {
+        std::getline(headin, head);
+        headin.close();
+    }
+
+    // Load branches
+    branches.clear();
+    std::ifstream bin(".minigit/branches.txt");
+    if (bin) {
+        std::string name, hash;
+        while (bin >> name >> hash)
+            branches[name] = hash;
+        bin.close();
+    }
+
+    // Load staged files
+    stagedFiles.clear();
+    std::ifstream sin(".minigit/staged.txt");
+    if (sin) {
+        std::string f;
+        while (std::getline(sin, f))
+            if (!f.empty()) stagedFiles.insert(f);
+        sin.close();
+    }
+
+    // Load commits
+    commits.clear();
+    if (fs::exists(".minigit/commits")) {
+        for (const auto&entry :fs::directory_iterator(".minigit/commits")) {
+            std::ifstream cin(entry.path());
+            if (cin) {
+                Commit c;
+                std::string n_blobs;
+                std::getline(cin, c.hash);
+                std::getline(cin, c.message);
+                std::getline(cin, c.timestamp);
+                std::getline(cin, c.parent);
+                std::getline(cin, n_blobs);
+
+                size_t n = 0;
+                try {
+                    n = std::stoul(n_blobs);
+                } catch (const std::exception&) {
+                    n = 0;
+                }
+
+                for (size_t i = 0; i < n; ++i) {
+                    Blob b;
+                    cin >>b.hash>>b.filename;
+                    cin.ignore();
+                    c.blobs.push_back(b);
+                }
+                commits[c.hash] = c;
+            }
+        }
+    }
+}
 void MiniGit::commit(const std::string& message) {
     if (stagedFiles.empty()) {
         std::cout << YELLOW << "Nothing to commit." << RESET << "\n";
